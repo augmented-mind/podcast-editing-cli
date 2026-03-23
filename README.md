@@ -5,8 +5,8 @@ CLI toolkit for podcast transcription and auto-editing. Designed for two-camera,
 ## Install
 
 ```bash
-pip install -e .
 brew install ffmpeg  # if not already installed
+uv pip install -e .
 ```
 
 ## Workflow
