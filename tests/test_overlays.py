@@ -121,3 +121,47 @@ def test_insert_overlays_accepts_fcpxmld_bundle(tmp_path: Path) -> None:
 
     assert output.exists()
     assert [item.path.name for item in inserted] == ["0_00.png"]
+
+
+def test_insert_overlays_uses_project_timeline_across_primary_items(tmp_path: Path) -> None:
+    fcpxml = tmp_path / "timeline.fcpxml"
+    overlay_dir = tmp_path / "overlay"
+    output = tmp_path / "timeline_overlays.fcpxml"
+    overlay_dir.mkdir()
+    fcpxml.write_text(
+        """<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE fcpxml>
+<fcpxml version=\"1.11\">
+  <resources>
+    <format id=\"r1\" name=\"FFVideoFormat1080p30\" frameDuration=\"1/30s\" width=\"1920\" height=\"1080\" />
+    <asset id=\"r2\" name=\"first.mov\" start=\"0s\" duration=\"60s\" hasVideo=\"1\" format=\"r1\" videoSources=\"1\" />
+    <asset id=\"r3\" name=\"second.mov\" start=\"100s\" duration=\"60s\" hasVideo=\"1\" format=\"r1\" videoSources=\"1\" />
+  </resources>
+  <library>
+    <event name=\"Event\">
+      <project name=\"Project\">
+        <sequence format=\"r1\" duration=\"120s\" tcStart=\"0s\" tcFormat=\"NDF\">
+          <spine>
+            <asset-clip ref=\"r2\" offset=\"0s\" name=\"first.mov\" start=\"0s\" duration=\"60s\" format=\"r1\" />
+            <asset-clip ref=\"r3\" offset=\"60s\" name=\"second.mov\" start=\"100s\" duration=\"60s\" format=\"r1\" />
+          </spine>
+        </sequence>
+      </project>
+    </event>
+  </library>
+</fcpxml>
+"""
+    )
+    write_png(overlay_dir / "1_05.png")
+
+    inserted = insert_overlays(fcpxml, overlay_dir, output=output, duration=4.5)
+
+    assert [item.start for item in inserted] == [Fraction(65)]
+    root = ET.parse(output).getroot()
+    primary_items = root.findall(".//spine/asset-clip")
+    assert len(primary_items[0].findall("video")) == 0
+    second_videos = primary_items[1].findall("video")
+    assert len(second_videos) == 1
+    # 65s on the project timeline maps to 105s in the second clip's local timeline
+    # because that primary item starts at 60s in the project and 100s locally.
+    assert parse_time(second_videos[0].get("offset")) == Fraction(105)

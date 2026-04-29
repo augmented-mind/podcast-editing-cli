@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import struct
 import sys
+import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from fractions import Fraction
@@ -46,6 +47,16 @@ class InsertedOverlay:
     duration: Fraction
     lane: int
     asset_id: str
+
+
+@dataclass(frozen=True)
+class TimelineAnchor:
+    """Top-level primary storyline item used to anchor connected overlays."""
+
+    container: ET.Element
+    timeline_start: Fraction
+    timeline_end: Fraction
+    local_start: Fraction
 
 
 def parse_timestamp(stem: str) -> Fraction | None:
@@ -233,17 +244,68 @@ def _append_overlay_asset(
     return asset_id
 
 
-def find_primary_container(root: ET.Element) -> ET.Element:
-    """Find the primary storyline item to receive connected overlay clips."""
-    spine = root.find(".//spine")
+def find_project_sequence(root: ET.Element) -> ET.Element:
+    """Find the project sequence, not a nested/resource sequence."""
+    sequence = root.find(".//project/sequence")
+    if sequence is None:
+        sequence = root.find(".//sequence")
+    if sequence is None:
+        sys.exit("Could not find <sequence> in FCPXML")
+    return sequence
+
+
+def find_timeline_spine(root: ET.Element) -> ET.Element:
+    """Find the top-level project timeline spine."""
+    sequence = find_project_sequence(root)
+    spine = sequence.find("spine")
     if spine is None:
-        sys.exit("Could not find <spine> in FCPXML")
+        sys.exit("Could not find project <spine> in FCPXML")
+    return spine
+
+
+def find_timeline_anchors(root: ET.Element) -> list[TimelineAnchor]:
+    """Find primary storyline items that can anchor overlays.
+
+    Overlay file names are interpreted in project/sequence timeline seconds.
+    FCPXML connected clips live inside the primary storyline item they are
+    anchored to, so we translate each project timeline timestamp into that
+    item's local timeline when writing the child ``offset``.
+    """
+    anchors: list[TimelineAnchor] = []
+    spine = find_timeline_spine(root)
 
     for child in spine:
-        if child.tag in PRIMARY_STORYLINE_TAGS and child.get("lane") is None:
-            return child
+        if child.tag not in PRIMARY_STORYLINE_TAGS or child.get("lane") is not None:
+            continue
+        duration = child.get("duration")
+        if duration is None:
+            continue
+        timeline_start = parse_time(child.get("offset", "0s"))
+        local_start = parse_time(child.get("start", "0s"))
+        timeline_duration = parse_time(duration)
+        anchors.append(
+            TimelineAnchor(
+                container=child,
+                timeline_start=timeline_start,
+                timeline_end=timeline_start + timeline_duration,
+                local_start=local_start,
+            )
+        )
 
-    sys.exit("Could not find a primary storyline clip in the spine")
+    if not anchors:
+        sys.exit("Could not find a primary storyline item in the project spine")
+
+    return anchors
+
+
+def find_anchor_for_timeline_time(
+    anchors: list[TimelineAnchor], timeline_time: Fraction
+) -> TimelineAnchor | None:
+    """Return the primary storyline item covering ``timeline_time``."""
+    for anchor in anchors:
+        if anchor.timeline_start <= timeline_time < anchor.timeline_end:
+            return anchor
+    return None
 
 
 def _connected_clip_insert_index(container: ET.Element) -> int:
@@ -253,6 +315,21 @@ def _connected_clip_insert_index(container: ET.Element) -> int:
         if child.tag in CONNECTED_CLIP_BOUNDARY_TAGS:
             return i
     return len(children)
+
+
+def _retitle_project(root: ET.Element, output_path: Path) -> None:
+    """Give the imported timeline its own project identity.
+
+    FCPXML exports keep the original project UID/name. If we import an edited XML
+    with the same identity, Final Cut can make it look like the old/original
+    project is being reused. Assigning a fresh project UID and output-based name
+    makes the generated timeline clearly independent.
+    """
+    project = root.find(".//project")
+    if project is None:
+        return
+    project.set("name", output_path.stem)
+    project.set("uid", str(uuid.uuid4()).upper())
 
 
 def _assign_lanes(intervals: list[tuple[Fraction, Fraction]], base_lane: int) -> list[int]:
@@ -307,40 +384,49 @@ def insert_overlays(
     if clip_duration <= 0:
         sys.exit("Overlay duration must be greater than 0")
 
-    container = find_primary_container(root)
-    container_start = parse_time(container.get("start", "0s"))
-    container_duration = parse_time(container.get("duration"))
-    container_end = container_start + container_duration
+    anchors = find_timeline_anchors(root)
 
-    prepared: list[tuple[OverlayClip, Fraction, Fraction, str, str]] = []
+    prepared: list[tuple[OverlayClip, TimelineAnchor, Fraction, Fraction, Fraction, str]] = []
     format_ids: dict[tuple[int, int], str] = {}
 
     for overlay in overlays:
-        start = snap_to_frame(container_start + overlay.start, frame_dur)
-        end = min(start + clip_duration, container_end)
-        if start >= container_end or end <= start:
+        timeline_start = snap_to_frame(overlay.start, frame_dur)
+        anchor = find_anchor_for_timeline_time(anchors, timeline_start)
+        if anchor is None:
             print(
                 f"  Skipping {overlay.path.name}: "
-                f"starts after the primary clip ends ({float(container_duration):.1f}s)"
+                f"{float(timeline_start):.2f}s is not covered by the primary storyline"
+            )
+            continue
+
+        local_start = snap_to_frame(
+            anchor.local_start + (timeline_start - anchor.timeline_start), frame_dur
+        )
+        local_end = anchor.local_start + (anchor.timeline_end - anchor.timeline_start)
+        dur = min(clip_duration, local_end - local_start)
+        if dur <= 0:
+            print(
+                f"  Skipping {overlay.path.name}: "
+                "no room before the end of the primary storyline item"
             )
             continue
 
         format_id = _ensure_image_format(root, resources, format_ids, overlay.width, overlay.height)
-        dur = end - start
         asset_id = _append_overlay_asset(root, resources, overlay, format_id, dur, frame_dur)
-        prepared.append((overlay, start, dur, asset_id, format_id))
+        prepared.append((overlay, anchor, timeline_start, local_start, dur, asset_id))
 
     if not prepared:
-        sys.exit("No overlays fell within the primary clip duration")
+        sys.exit("No overlays fell within the project timeline")
 
-    intervals = [(start, start + dur) for _, start, dur, _, _ in prepared]
+    intervals = [(timeline_start, timeline_start + dur) for _, _, timeline_start, _, dur, _ in prepared]
     lanes = _assign_lanes(intervals, lane)
 
-    insert_idx = _connected_clip_insert_index(container)
+    insert_indices: dict[int, int] = {}
+    insert_counts: dict[int, int] = {}
     inserted: list[InsertedOverlay] = []
 
-    for i, ((overlay, start, dur, asset_id, format_id), assigned_lane) in enumerate(
-        zip(prepared, lanes)
+    for (overlay, anchor, timeline_start, local_start, dur, asset_id), assigned_lane in zip(
+        prepared, lanes
     ):
         # Use <video> rather than <asset-clip> for generated still overlays.
         # FCPXML's asset-clip importer is brittle for newly declared stills and
@@ -349,23 +435,31 @@ def insert_overlays(
         video = ET.Element("video")
         video.set("ref", asset_id)
         video.set("lane", str(assigned_lane))
-        video.set("offset", fmt(start, frame_dur))
+        video.set("offset", fmt(local_start, frame_dur))
         video.set("name", overlay.path.name)
         video.set("start", "0s")
         video.set("duration", fmt(dur, frame_dur))
         video.set("role", "video")
 
-        container.insert(insert_idx + i, video)
+        container = anchor.container
+        container_id = id(container)
+        if container_id not in insert_indices:
+            insert_indices[container_id] = _connected_clip_insert_index(container)
+            insert_counts[container_id] = 0
+        insert_at = insert_indices[container_id] + insert_counts[container_id]
+        container.insert(insert_at, video)
+        insert_counts[container_id] += 1
         inserted.append(
             InsertedOverlay(
                 path=overlay.path,
-                start=start - container_start,
+                start=timeline_start,
                 duration=dur,
                 lane=assigned_lane,
                 asset_id=asset_id,
             )
         )
 
+    _retitle_project(root, output_path)
     write_fcpxml(tree, str(output_path))
 
     print("=" * 60)
