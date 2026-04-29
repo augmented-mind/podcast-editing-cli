@@ -18,18 +18,44 @@ def parse_time(s: str) -> Fraction:
     return Fraction(int(s))
 
 
-def fmt(f: Fraction) -> str:
-    """Fraction -> FCPXML time string like '1001/30000s'."""
+def fmt(f: Fraction, frame_dur: Fraction | None = None) -> str:
+    """Fraction -> FCPXML time string like '1001/30000s'.
+
+    If ``frame_dur`` is provided, frame-aligned values are formatted with the
+    sequence time base denominator so Final Cut recognizes them as exact frame
+    boundaries.
+    """
     f = Fraction(f)
     if f.denominator == 1:
         return f"{f.numerator}s"
+    if frame_dur is not None:
+        target_den = frame_dur.denominator
+        if target_den % f.denominator == 0:
+            mult = target_den // f.denominator
+            return f"{f.numerator * mult}/{target_den}s"
     return f"{f.numerator}/{f.denominator}s"
 
 
-def snap_to_frame(t: Fraction) -> Fraction:
-    """Snap to nearest 29.97fps frame boundary (multiple of 1001/30000)."""
-    n = round(t / FRAME_DUR)
-    return n * FRAME_DUR
+def snap_to_frame(t: Fraction, frame_dur: Fraction = FRAME_DUR) -> Fraction:
+    """Snap to nearest frame boundary."""
+    n = round(t / frame_dur)
+    return n * frame_dur
+
+
+def detect_frame_duration(root: ET.Element) -> Fraction:
+    """Detect the sequence frame duration, defaulting to 29.97fps."""
+    sequence = root.find(".//sequence")
+    seq_format_id = sequence.get("format") if sequence is not None else None
+
+    if seq_format_id:
+        for fmt_el in root.iter("format"):
+            if fmt_el.get("id") == seq_format_id:
+                frame_duration = fmt_el.get("frameDuration")
+                if frame_duration:
+                    return parse_time(frame_duration)
+                break
+
+    return FRAME_DUR
 
 
 def detect_structure(fcpxml_path: str) -> dict:

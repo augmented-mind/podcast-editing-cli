@@ -60,3 +60,38 @@ def autoedit(fcpxml_file, audio_file, output, min_segment, silence_db,
         whisper_model=whisper_model,
         language=language,
     )
+
+
+@cli.command()
+@click.argument("fcpxml_file", type=click.Path(exists=True))
+@click.argument("overlay_dir", type=click.Path(exists=True, file_okay=False))
+@click.option(
+    "--output", "-o", type=click.Path(),
+    help="Output FCPXML path (default: <input>_overlays.fcpxml)",
+)
+@click.option("--duration", type=float, default=4.5, show_default=True,
+              help="Overlay duration in seconds")
+@click.option("--lane", type=int, default=10, show_default=True,
+              help="Base positive lane for connected overlay clips")
+@click.option("--fade-in", type=float, default=0.0, show_default=True,
+              help="Opacity fade-in duration in seconds")
+@click.option("--ignore-unmatched", is_flag=True,
+              help="Skip PNGs whose names do not start with a timestamp")
+def overlays(fcpxml_file, overlay_dir, output, duration, lane, fade_in, ignore_unmatched):
+    """Insert timestamped PNG overlays into an FCPXML timeline.
+
+    FCPXML_FILE may be a .fcpxml file, a .fcpxmld bundle, or
+    .fcpxmld/Info.fcpxml. PNG names should start with M_SS or H_MM_SS, for
+    example: 6_19.png -> 6 minutes 19 seconds.
+    """
+    from podcast.overlays import insert_overlays
+
+    insert_overlays(
+        fcpxml_file,
+        overlay_dir,
+        output=output,
+        duration=duration,
+        lane=lane,
+        fade_in=fade_in,
+        ignore_unmatched=ignore_unmatched,
+    )
