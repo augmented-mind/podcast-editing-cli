@@ -73,9 +73,11 @@ def autoedit(fcpxml_file, audio_file, output, min_segment, silence_db,
               help="Overlay duration in seconds")
 @click.option("--lane", type=int, default=10, show_default=True,
               help="Base positive lane for connected overlay clips")
+@click.option("--fade-in", type=float, default=0.0, show_default=True,
+              help="Opacity fade-in duration in seconds")
 @click.option("--ignore-unmatched", is_flag=True,
               help="Skip PNGs whose names do not start with a timestamp")
-def overlays(fcpxml_file, overlay_dir, output, duration, lane, ignore_unmatched):
+def overlays(fcpxml_file, overlay_dir, output, duration, lane, fade_in, ignore_unmatched):
     """Insert timestamped PNG overlays into an FCPXML timeline.
 
     FCPXML_FILE may be a .fcpxml file, a .fcpxmld bundle, or
@@ -90,5 +92,6 @@ def overlays(fcpxml_file, overlay_dir, output, duration, lane, ignore_unmatched)
         output=output,
         duration=duration,
         lane=lane,
+        fade_in=fade_in,
         ignore_unmatched=ignore_unmatched,
     )

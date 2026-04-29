@@ -123,6 +123,32 @@ def test_insert_overlays_accepts_fcpxmld_bundle(tmp_path: Path) -> None:
     assert [item.path.name for item in inserted] == ["0_00.png"]
 
 
+def test_insert_overlays_can_add_fade_in(tmp_path: Path) -> None:
+    fcpxml = tmp_path / "timeline.fcpxml"
+    overlay_dir = tmp_path / "overlay"
+    output = tmp_path / "timeline_overlays.fcpxml"
+    overlay_dir.mkdir()
+    write_fcpxml(fcpxml)
+    write_png(overlay_dir / "0_00.png")
+
+    insert_overlays(fcpxml, overlay_dir, output=output, duration=4.5, fade_in=0.5)
+
+    root = ET.parse(output).getroot()
+    video = root.find(".//spine/asset-clip/video")
+    assert video is not None
+    blend = video.find("adjust-blend")
+    assert blend is not None
+    assert blend.get("amount") == "1"
+    param = blend.find("param")
+    assert param is not None
+    assert param.get("name") == "amount"
+    keyframes = param.findall("keyframeAnimation/keyframe")
+    assert [(kf.get("time"), kf.get("value")) for kf in keyframes] == [
+        ("0s", "0"),
+        ("15/30s", "1"),
+    ]
+
+
 def test_insert_overlays_uses_project_timeline_across_primary_items(tmp_path: Path) -> None:
     fcpxml = tmp_path / "timeline.fcpxml"
     overlay_dir = tmp_path / "overlay"

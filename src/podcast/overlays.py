@@ -317,6 +317,39 @@ def _connected_clip_insert_index(container: ET.Element) -> int:
     return len(children)
 
 
+def _add_opacity_fade_in(
+    video: ET.Element,
+    fade_duration: Fraction,
+    clip_duration: Fraction,
+    frame_dur: Fraction,
+) -> None:
+    """Add a video opacity fade-in to a generated overlay clip."""
+    fade_duration = min(fade_duration, clip_duration)
+    if fade_duration <= 0:
+        return
+
+    blend = ET.SubElement(video, "adjust-blend")
+    blend.set("amount", "1")
+
+    param = ET.SubElement(blend, "param")
+    # ``amount`` is the FCPXML attribute on adjust-blend that represents video
+    # opacity/blend amount. Keyframing it creates an editable opacity fade.
+    param.set("name", "amount")
+    param.set("value", "1")
+
+    animation = ET.SubElement(param, "keyframeAnimation")
+
+    start = ET.SubElement(animation, "keyframe")
+    start.set("time", "0s")
+    start.set("value", "0")
+    start.set("interp", "linear")
+
+    end = ET.SubElement(animation, "keyframe")
+    end.set("time", fmt(fade_duration, frame_dur))
+    end.set("value", "1")
+    end.set("interp", "linear")
+
+
 def _retitle_project(root: ET.Element, output_path: Path) -> None:
     """Give the imported timeline its own project identity.
 
@@ -353,6 +386,7 @@ def insert_overlays(
     output: str | Path | None = None,
     duration: float = 4.5,
     lane: int = 10,
+    fade_in: float = 0.0,
     ignore_unmatched: bool = False,
 ) -> list[InsertedOverlay]:
     """Insert timestamped PNG overlays into an FCPXML timeline."""
@@ -383,6 +417,9 @@ def insert_overlays(
     clip_duration = snap_to_frame(Fraction(str(duration)), frame_dur)
     if clip_duration <= 0:
         sys.exit("Overlay duration must be greater than 0")
+    fade_in_duration = snap_to_frame(Fraction(str(fade_in)), frame_dur)
+    if fade_in_duration < 0:
+        sys.exit("Fade-in duration cannot be negative")
 
     anchors = find_timeline_anchors(root)
 
@@ -440,6 +477,7 @@ def insert_overlays(
         video.set("start", "0s")
         video.set("duration", fmt(dur, frame_dur))
         video.set("role", "video")
+        _add_opacity_fade_in(video, fade_in_duration, dur, frame_dur)
 
         container = anchor.container
         container_id = id(container)
@@ -469,6 +507,8 @@ def insert_overlays(
     print(f"  Overlay dir:  {Path(overlay_dir)}")
     print(f"  Output XML:   {output_path}")
     print(f"  Duration:     {float(clip_duration):.2f}s ({fmt(clip_duration, frame_dur)})")
+    if fade_in_duration > 0:
+        print(f"  Fade in:      {float(fade_in_duration):.2f}s ({fmt(fade_in_duration, frame_dur)})")
     print(f"  Base lane:    {lane}")
     print(f"  Inserted:     {len(inserted)} overlay(s)")
     print("\n  First overlays:")
