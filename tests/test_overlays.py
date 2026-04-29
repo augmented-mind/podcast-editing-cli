@@ -97,13 +97,14 @@ def test_insert_overlays(tmp_path: Path) -> None:
     assert primary is not None
     children = list(primary)
     marker_index = next(i for i, child in enumerate(children) if child.tag == "marker")
-    overlay_clips = [child for child in children if child.tag == "asset-clip"]
+    overlay_clips = [child for child in children if child.tag == "video"]
     assert len(overlay_clips) == 2
     assert all(children.index(child) < marker_index for child in overlay_clips)
 
     assert parse_time(overlay_clips[0].get("offset")) == Fraction(0)
     assert parse_time(overlay_clips[0].get("duration")) == Fraction(9, 2)
     assert overlay_clips[0].get("lane") == "10"
+    assert overlay_clips[0].get("role") == "video"
     assert overlay_clips[1].get("lane") == "11"
 
 

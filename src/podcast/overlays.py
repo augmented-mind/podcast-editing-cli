@@ -212,7 +212,9 @@ def _append_overlay_asset(
     asset = ET.Element("asset")
     asset.set("id", asset_id)
     asset.set("name", overlay.path.name)
-    asset.set("uid", src)
+    # Leave uid unset for newly introduced media. Final Cut assigns a stable
+    # media uid on import from the media-rep src; using a made-up uid can make
+    # the importer try to resolve a non-existent library object.
     asset.set("start", "0s")
     # Although still-image assets often export with a zero duration, Final Cut's
     # XML importer can crash when a newly declared still asset is immediately
@@ -340,16 +342,20 @@ def insert_overlays(
     for i, ((overlay, start, dur, asset_id, format_id), assigned_lane) in enumerate(
         zip(prepared, lanes)
     ):
-        asset_clip = ET.Element("asset-clip")
-        asset_clip.set("ref", asset_id)
-        asset_clip.set("lane", str(assigned_lane))
-        asset_clip.set("offset", fmt(start, frame_dur))
-        asset_clip.set("name", overlay.path.name)
-        asset_clip.set("start", "0s")
-        asset_clip.set("duration", fmt(dur, frame_dur))
-        asset_clip.set("format", format_id)
+        # Use <video> rather than <asset-clip> for generated still overlays.
+        # FCPXML's asset-clip importer is brittle for newly declared stills and
+        # can crash Final Cut during XML import; <video> is the lower-level
+        # video-only story element for ranges from an asset.
+        video = ET.Element("video")
+        video.set("ref", asset_id)
+        video.set("lane", str(assigned_lane))
+        video.set("offset", fmt(start, frame_dur))
+        video.set("name", overlay.path.name)
+        video.set("start", "0s")
+        video.set("duration", fmt(dur, frame_dur))
+        video.set("role", "video")
 
-        container.insert(insert_idx + i, asset_clip)
+        container.insert(insert_idx + i, video)
         inserted.append(
             InsertedOverlay(
                 path=overlay.path,
