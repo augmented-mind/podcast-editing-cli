@@ -91,6 +91,7 @@ def test_insert_overlays(tmp_path: Path) -> None:
     ]
     assert len(overlay_assets) == 2
     assert all(asset.find("media-rep") is not None for asset in overlay_assets)
+    assert all(parse_time(asset.get("duration")) == Fraction(9, 2) for asset in overlay_assets)
 
     primary = root.find(".//spine/asset-clip")
     assert primary is not None

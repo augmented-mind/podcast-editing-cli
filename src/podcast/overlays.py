@@ -203,6 +203,8 @@ def _append_overlay_asset(
     resources: ET.Element,
     overlay: OverlayClip,
     format_id: str,
+    duration: Fraction,
+    frame_dur: Fraction,
 ) -> str:
     asset_id = _next_resource_id(root)
     src = overlay.path.resolve().as_uri()
@@ -212,7 +214,11 @@ def _append_overlay_asset(
     asset.set("name", overlay.path.name)
     asset.set("uid", src)
     asset.set("start", "0s")
-    asset.set("duration", "0s")
+    # Although still-image assets often export with a zero duration, Final Cut's
+    # XML importer can crash when a newly declared still asset is immediately
+    # used by an asset-clip whose duration is longer than the asset duration.
+    # Give each generated still asset the duration we use on the timeline.
+    asset.set("duration", fmt(duration, frame_dur))
     asset.set("hasVideo", "1")
     asset.set("format", format_id)
     asset.set("videoSources", "1")
@@ -318,8 +324,9 @@ def insert_overlays(
             continue
 
         format_id = _ensure_image_format(root, resources, format_ids, overlay.width, overlay.height)
-        asset_id = _append_overlay_asset(root, resources, overlay, format_id)
-        prepared.append((overlay, start, end - start, asset_id, format_id))
+        dur = end - start
+        asset_id = _append_overlay_asset(root, resources, overlay, format_id, dur, frame_dur)
+        prepared.append((overlay, start, dur, asset_id, format_id))
 
     if not prepared:
         sys.exit("No overlays fell within the primary clip duration")
