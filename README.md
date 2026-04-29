@@ -46,6 +46,18 @@ All edits are non-destructive — select any disabled clip in FCP and press **V*
 
 **File → Import → XML...** → select the `_edited.fcpxml` file. FCP creates a new project with the auto-edits applied. Fine-tune from there.
 
+### Optional: Add timestamped PNG overlays
+
+Name overlay PNGs by their desired start time, e.g. `6_19.png` for 6:19 or
+`1_02_03.png` for 1:02:03, then import them into a copied timeline XML:
+
+```bash
+podcast overlays timeline.fcpxml overlay --duration 4.5 -o timeline_overlays.fcpxml
+```
+
+Import `timeline_overlays.fcpxml` back into Final Cut Pro. Each PNG is inserted
+as an editable connected clip on a high video lane.
+
 ### Step 5: Transcribe the final export
 
 After finishing your manual edits, export the final video from FCP, then:
@@ -80,6 +92,18 @@ podcast autoedit timeline.fcpxml audio.aifc --fillers --whisper-model small  # f
 podcast autoedit timeline.fcpxml audio.aifc --min-segment 3.0     # less frequent camera switches
 podcast autoedit timeline.fcpxml audio.aifc -o custom_output.fcpxml
 ```
+
+### `podcast overlays`
+
+```bash
+podcast overlays timeline.fcpxml overlay                           # 4.5s PNG overlays
+podcast overlays timeline.fcpxml overlay --duration 5.0            # custom duration
+podcast overlays timeline.fcpxml overlay --lane 12                 # use lane 12+
+podcast overlays timeline.fcpxml overlay -o timeline_overlays.fcpxml
+```
+
+PNG file names should begin with a timestamp: `M_SS.png`, `MM_SS.png`, or
+`H_MM_SS.png`. Descriptive suffixes are okay, e.g. `6_19_topic_card.png`.
 
 #### Options
 
