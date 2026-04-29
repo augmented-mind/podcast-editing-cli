@@ -92,6 +92,17 @@ def png_dimensions(path: Path) -> tuple[int, int]:
     return width, height
 
 
+def resolve_fcpxml_path(fcpxml_file: str | Path) -> Path:
+    """Resolve a .fcpxml file or .fcpxmld bundle to an XML file path."""
+    path = Path(fcpxml_file)
+    if path.is_dir():
+        info = path / "Info.fcpxml"
+        if info.exists():
+            return info
+        sys.exit(f"FCPXML bundle does not contain Info.fcpxml: {path}")
+    return path
+
+
 def collect_overlays(overlay_dir: str | Path, *, ignore_unmatched: bool = False) -> list[OverlayClip]:
     """Collect timestamped PNG overlays from a directory."""
     root = Path(overlay_dir)
@@ -260,10 +271,15 @@ def insert_overlays(
     ignore_unmatched: bool = False,
 ) -> list[InsertedOverlay]:
     """Insert timestamped PNG overlays into an FCPXML timeline."""
-    fcpxml_path = Path(fcpxml_file)
+    fcpxml_input_path = Path(fcpxml_file)
+    fcpxml_path = resolve_fcpxml_path(fcpxml_input_path)
     if output is None:
-        # Handle both .fcpxml and .fcpxmld/Info.fcpxml.
-        if fcpxml_path.name == "Info.fcpxml":
+        # Handle .fcpxml, .fcpxmld bundles, and .fcpxmld/Info.fcpxml.
+        if fcpxml_input_path.is_dir():
+            output = fcpxml_input_path.with_name(
+                f"{fcpxml_input_path.stem.replace('.fcpxmld', '')}_overlays.fcpxml"
+            )
+        elif fcpxml_path.name == "Info.fcpxml":
             stem = fcpxml_path.parent.stem.replace(".fcpxmld", "")
             output = fcpxml_path.parent.parent / f"{stem}_overlays.fcpxml"
         else:

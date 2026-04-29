@@ -104,3 +104,18 @@ def test_insert_overlays(tmp_path: Path) -> None:
     assert parse_time(overlay_clips[0].get("duration")) == Fraction(9, 2)
     assert overlay_clips[0].get("lane") == "10"
     assert overlay_clips[1].get("lane") == "11"
+
+
+def test_insert_overlays_accepts_fcpxmld_bundle(tmp_path: Path) -> None:
+    bundle = tmp_path / "main-snapshot.fcpxmld"
+    overlay_dir = tmp_path / "overlay"
+    output = tmp_path / "timeline_overlays.fcpxml"
+    bundle.mkdir()
+    overlay_dir.mkdir()
+    write_fcpxml(bundle / "Info.fcpxml")
+    write_png(overlay_dir / "0_00.png")
+
+    inserted = insert_overlays(bundle, overlay_dir, output=output, duration=4.5)
+
+    assert output.exists()
+    assert [item.path.name for item in inserted] == ["0_00.png"]

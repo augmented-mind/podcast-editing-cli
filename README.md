@@ -97,13 +97,16 @@ podcast autoedit timeline.fcpxml audio.aifc -o custom_output.fcpxml
 
 ```bash
 podcast overlays timeline.fcpxml overlay                           # 4.5s PNG overlays
+podcast overlays main-snapshot.fcpxmld overlay                      # FCPXML bundle
 podcast overlays timeline.fcpxml overlay --duration 5.0            # custom duration
 podcast overlays timeline.fcpxml overlay --lane 12                 # use lane 12+
 podcast overlays timeline.fcpxml overlay -o timeline_overlays.fcpxml
 ```
 
-PNG file names should begin with a timestamp: `M_SS.png`, `MM_SS.png`, or
-`H_MM_SS.png`. Descriptive suffixes are okay, e.g. `6_19_topic_card.png`.
+The input may be a `.fcpxml` file, a `.fcpxmld` bundle, or
+`.fcpxmld/Info.fcpxml`. PNG file names should begin with a timestamp:
+`M_SS.png`, `MM_SS.png`, or `H_MM_SS.png`. Descriptive suffixes are okay, e.g.
+`6_19_topic_card.png`.
 
 #### Options
 

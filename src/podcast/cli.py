@@ -78,8 +78,9 @@ def autoedit(fcpxml_file, audio_file, output, min_segment, silence_db,
 def overlays(fcpxml_file, overlay_dir, output, duration, lane, ignore_unmatched):
     """Insert timestamped PNG overlays into an FCPXML timeline.
 
-    PNG names should start with M_SS or H_MM_SS, for example:
-    6_19.png -> 6 minutes 19 seconds, 1_02_03.png -> 1 hour 2 minutes 3 seconds.
+    FCPXML_FILE may be a .fcpxml file, a .fcpxmld bundle, or
+    .fcpxmld/Info.fcpxml. PNG names should start with M_SS or H_MM_SS, for
+    example: 6_19.png -> 6 minutes 19 seconds.
     """
     from podcast.overlays import insert_overlays
 
