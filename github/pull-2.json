@@ -1,0 +1,124 @@
+{
+  "author": {
+    "id": "MDQ6VXNlcjIyNTEyODI1",
+    "is_bot": false,
+    "login": "lolipopshock",
+    "name": "Shannon Shen"
+  },
+  "baseRefName": "main",
+  "body": "## Summary\n- add `podcast overlays` command for timestamp-named PNG overlays\n- ground overlay timestamps on the project/sequence timeline, then translate to the correct primary storyline item local timeline\n- create FCPXML still-image resources and connected video clips with frame-snapped durations\n- add optional opacity fade-in via `--fade-in`\n- accept `.fcpxml`, `.fcpxmld` bundle, or `.fcpxmld/Info.fcpxml` inputs\n- avoid FCP importer crashes by using video story elements for generated still overlays and leaving new media uids unset\n- give generated imports a fresh project UID/name based on the output file\n- document the workflow and add tests for timestamp parsing/FCPXML insertion\n\n## Test\n- `PYTHONPATH=src python -m pytest -q`\n- `xmllint --noout --dtdvalid /tmp/FCPXMLv1_11.dtd timeline_overlays.fcpxml`\n- manual generation: `PYTHONPATH=src python -c 'from podcast.cli import cli; cli()' overlays main-snapshot.fcpxmld overlay --duration 4.5 --fade-in 0.5 -o timeline_overlays.fcpxml`\n",
+  "closedAt": null,
+  "comments": [
+    {
+      "id": "IC_kwDORdoSG88AAAABAwrQtw",
+      "author": {
+        "login": "sepo-agent-app"
+      },
+      "authorAssociation": "NONE",
+      "body": "## Rubrics Review\n\n| Total Score | Verdict | Rubrics Scored |\n| -- | -- | -- |\n| N/A | N/A | 0 |\n\n| Dimension | Rubric | Result | Score | Evidence |\n| -- | -- | -- | -- | -- |\n| — | — | not applicable | N/A | No rubrics configured for this repository |\n\n## Notes\n\n- No active rubrics are configured for `augmented-mind/podcast-editing-cli`. The rubrics directory was empty (only `.gitkeep` stubs exist on `agent/memory`).\n- No rubric-specific follow-up needed.\n\n## Findings\n\n- **INFO:** All 4 tests pass (`PYTHONPATH=src python -m pytest -q` on `feature/overlay-fcpxml`). The implementation covers timestamp parsing, PNG dimension reading, FCPXML insertion with DTD-order compliance (connected clips before `<marker>`), lane collision avoidance, and `.fcpxmld` bundle resolution.\n- **INFO:** `detect_frame_duration` in `fcpxml.py` does not guard against `sequence is None` before calling `.get(\"format\")` — a `NoneType` AttributeError would surface on malformed FCPXML with no `<sequence>`. Low severity; existing tests use well-formed XML.\n- **INFO:** `_next_resource_id` iterates every element in the tree for each overlay inserted (O(n×m)); negligible for typical timelines but could be pre-computed.\n\n## Final Rubric Verdict\n\nN/A",
+      "createdAt": "2026-04-29T17:27:01Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/augmented-mind/podcast-editing-cli/pull/2#issuecomment-4346007735",
+      "viewerDidAuthor": true
+    },
+    {
+      "id": "IC_kwDORdoSG88AAAABAwuCfw",
+      "author": {
+        "login": "sepo-agent-app"
+      },
+      "authorAssociation": "NONE",
+      "body": "## AI Review Synthesis\n\n<!-- sepo-agent-review-synthesis -->\n\n> Dual-agent review by **Claude** and **Codex**.\n> Requested by @lolipopshock.\n\nBoth inline comments posted. Here is the synthesized review:\n\n---\n\n## Summary of PR/Issue\n\nPR #2 adds a `podcast overlays` command that inserts timestamped PNG stills as connected clips into an FCPXML timeline. Overlays are discovered by parsing `M_SS` / `H_MM_SS` filename stems, read for dimensions via their IHDR chunk, and written as FCPXML `<asset>` + `<asset-clip>` pairs in the correct DTD order. The command accepts `.fcpxml`, `.fcpxmld`, or bare `Info.fcpxml` inputs. Four tests cover timestamp parsing, PNG dimension reading, FCPXML insertion, and bundle resolution.\n\n## Review\n\nThe implementation is well-scoped, follows all existing project conventions, and handles FCPXML DTD ordering correctly. Two items deserve attention before merging: the asset `uid` is a file URI instead of a UUID, and the timestamp coordinate frame is source-media time (which silently misbehaves for trimmed clips and is undocumented).\n\n| Issue | Severity | Description |\n| -- | -- | -- |\n| Timestamp coordinates are source-media time, not playback time | WARNING | `container_start` (the clip's trim `start`) is added to overlay timestamps; for trimmed clips this silently places overlays at wrong positions. At minimum must be documented; ideally reanchored to playback in-point. |\n| `asset uid` is a file URI, not a UUID | WARNING | FCP expects a UUID for `uid`; using the file URI is non-standard and could confuse round-trip imports or tooling. `str(uuid.uuid4()).upper()` is the standard form. |\n| Dead `or FRAME_DUR` fallback in `insert_overlays` | INFO | `detect_frame_duration` always returns a `Fraction` (never `None`), so the guard is unreachable and misleads future readers. |\n| `_sequence_format` duplicates `detect_frame_duration` traversal | INFO | Both functions independently walk the tree to find the sequence format element; a minor DRY concern with no runtime impact. |\n| Missing `hasAudio=\"0\"` on still-image assets | INFO | FCP's own still-image assets always set `hasAudio=\"0\"` explicitly; omitting it is harmless but non-standard. |\n| `_next_resource_id` is O(n) per call, called O(n) times | INFO | O(n²) total; negligible for typical overlay counts (<100 PNGs) but trivially pre-computable. |\n| `detect_frame_duration` does not guard `sequence is None` | INFO | A `NoneType` AttributeError would surface on malformed FCPXML with no `<sequence>`; low risk given well-formed inputs in practice. |\n\n## Progress\n\n- All 4 tests pass (`PYTHONPATH=src python -m pytest -q` on `feature/overlay-fcpxml`).\n- DTD child-element ordering (connected clips before `<marker>`) is correctly implemented.\n- Lane collision avoidance is in place.\n- `.fcpxmld` bundle resolution is handled.\n- The still-asset duration fix (matching timeline clip duration to avoid FCP importer crashes) is correct and well-commented.\n\n## Issue Details\n\n<details>\n<summary>Timestamp coordinates are source-media time, not playback time</summary>\n\n**Cause:** `container_start = parse_time(container.get(\"start\", \"0s\"))` reads the clip's source-media in-point (trim head). Adding `overlay.start` to it anchors timestamps to the raw source origin, not the visible playback start. For the common case of an un-trimmed clip (`start=\"0s\"`) the result is correct and invisible. For a clip trimmed 10 minutes in, `0_05.png` correctly lands 5 s into the visible content, but `10_05.png` would land only 5 s in (605 s source) rather than 10 m 5 s into the visible clip.\n\n**Candidate solutions:**\n1. **Document only:** Clarify in the README and `insert_overlays` docstring that filenames are relative to the clip's source-media time origin.\n2. **Reanchor:** Subtract `container_start` from the overlay timestamp so all filenames are relative to the playback in-point (`start = snap_to_frame(overlay.start, frame_dur)`), which is what most users will expect.\n\n**Comments:** Option 2 is a one-line change and is likely more intuitive for users who think in \"video playback time.\" The choice has product implications worth a quick maintainer decision.\n</details>\n\n<details>\n<summary>`asset uid` is a file URI, not a UUID</summary>\n\n**Cause:** `asset.set(\"uid\", overlay.path.resolve().as_uri())` sets `uid` to a `file://` URI. The `uid` attribute is FCP's stable cross-project identity handle; FCP generates UUIDs (e.g., `F3A2B1C4-...`) for it.\n\n**Candidate solutions:** Replace with `str(uuid.uuid4()).upper()`. The `src` attribute on `<media-rep>` already carries the file URI, so no information is lost.\n\n**Comments:** Absolute paths are collision-free so round-trip import usually works, but it is semantically incorrect and could trip tools or FCP versions that validate the UUID format.\n</details>\n\n<details>\n<summary>Dead `or FRAME_DUR` fallback in `insert_overlays`</summary>\n\n**Cause:** `frame_dur = detect_frame_duration(root) or FRAME_DUR` — `detect_frame_duration` never returns `None` (it falls through to `return FRAME_DUR`), making the guard unreachable.\n\n**Candidate solutions:** Remove the `or FRAME_DUR` suffix, or change `detect_frame_duration` to return `Fraction | None` and raise/log on missing format. Either clarifies intent.\n</details>\n\n<details>\n<summary>Missing `hasAudio=\"0\"` on still-image assets</summary>\n\n**Cause:** `asset.set(\"hasVideo\", \"1\")` is set but `hasAudio` is omitted. FCP-generated still-image assets always include `hasAudio=\"0\"` explicitly.\n\n**Candidate solutions:** Add `asset.set(\"hasAudio\", \"0\")` after `hasVideo`. One-line fix.\n</details>\n\n## Recommended Next Step\n\n`FIX_PR` — The two WARNING findings (UUID for `uid`, and either documenting or reanchoring the timestamp coordinate frame) are concrete, one-to-two-line changes safe for an automated fix pass.\n\n## Final Verdict\n\n`MINOR_ISSUES`\n\n## Action Items\n\n- [ ] Replace `asset.set(\"uid\", src)` with `asset.set(\"uid\", str(uuid.uuid4()).upper())` in `_append_overlay_asset` (`src/podcast/overlays.py:215`)\n- [ ] Clarify or reanchor timestamp coordinates: either document in README/docstring that filenames are relative to source-media time origin, or subtract `container_start` to anchor to playback in-point (`src/podcast/overlays.py:317`)\n- [ ] Remove the dead `or FRAME_DUR` guard from `frame_dur = detect_frame_duration(root) or FRAME_DUR`\n- [ ] Add `asset.set(\"hasAudio\", \"0\")` after `hasVideo` in `_append_overlay_asset`",
+      "createdAt": "2026-04-29T17:34:17Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/augmented-mind/podcast-editing-cli/pull/2#issuecomment-4346053247",
+      "viewerDidAuthor": true
+    }
+  ],
+  "createdAt": "2026-04-29T17:11:37Z",
+  "files": [
+    {
+      "path": "README.md",
+      "additions": 28,
+      "deletions": 0,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/cli.py",
+      "additions": 35,
+      "deletions": 0,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/fcpxml.py",
+      "additions": 32,
+      "deletions": 6,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/overlays.py",
+      "additions": 527,
+      "deletions": 0,
+      "changeType": "ADDED"
+    },
+    {
+      "path": "tests/test_overlays.py",
+      "additions": 193,
+      "deletions": 0,
+      "changeType": "ADDED"
+    }
+  ],
+  "headRefName": "feature/overlay-fcpxml",
+  "labels": [
+    {
+      "id": "LA_kwDORdoSG88AAAAChRty2Q",
+      "name": "agent/review",
+      "description": "",
+      "color": "5D70AE"
+    }
+  ],
+  "mergedAt": null,
+  "number": 2,
+  "reviewDecision": "",
+  "reviews": [
+    {
+      "id": "PRR_kwDORdoSG876TH5V",
+      "author": {
+        "login": "sepo-agent-app"
+      },
+      "authorAssociation": "NONE",
+      "body": "",
+      "submittedAt": "2026-04-29T17:33:24Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": {
+        "oid": "539ab7c5a08beddad680df308a4dc7b3f1735f9b"
+      }
+    },
+    {
+      "id": "PRR_kwDORdoSG876TIMa",
+      "author": {
+        "login": "sepo-agent-app"
+      },
+      "authorAssociation": "NONE",
+      "body": "",
+      "submittedAt": "2026-04-29T17:33:37Z",
+      "includesCreatedEdit": false,
+      "reactionGroups": [],
+      "state": "COMMENTED",
+      "commit": {
+        "oid": "539ab7c5a08beddad680df308a4dc7b3f1735f9b"
+      }
+    }
+  ],
+  "state": "OPEN",
+  "title": "Add FCPXML PNG overlay insertion",
+  "updatedAt": "2026-04-29T18:09:40Z",
+  "url": "https://github.com/augmented-mind/podcast-editing-cli/pull/2"
+}
