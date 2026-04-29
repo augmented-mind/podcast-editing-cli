@@ -5,3 +5,5 @@ __pycache__/
 dist/
 build/
 *.egg
+.agent/dist/
+.agent/node_modules/
