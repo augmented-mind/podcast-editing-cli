@@ -15,33 +15,82 @@ def parse_time(s: str) -> Fraction:
     if "/" in s:
         n, d = s.split("/")
         return Fraction(int(n), int(d))
-    return Fraction(int(s))
+    return Fraction(s)
 
 
-def fmt(f: Fraction) -> str:
-    """Fraction -> FCPXML time string like '1001/30000s'."""
+def fmt(f: Fraction, frame_dur: Fraction | None = None) -> str:
+    """Fraction -> FCPXML time string like '1001/30000s'.
+
+    If ``frame_dur`` is provided, frame-aligned values are formatted with the
+    sequence time base denominator so Final Cut recognizes them as exact frame
+    boundaries.
+    """
     f = Fraction(f)
+    if f == 0:
+        return "0s"
     if f.denominator == 1:
         return f"{f.numerator}s"
+    if frame_dur is not None:
+        # Use the frame rate's denominator (e.g., 30000 for both 29.97 and 30fps).
+        target_den = frame_dur.denominator
+        if target_den % f.denominator == 0:
+            mult = target_den // f.denominator
+            return f"{f.numerator * mult}/{target_den}s"
     return f"{f.numerator}/{f.denominator}s"
 
 
-def snap_to_frame(t: Fraction) -> Fraction:
-    """Snap to nearest 29.97fps frame boundary (multiple of 1001/30000)."""
-    n = round(t / FRAME_DUR)
-    return n * FRAME_DUR
+def snap_to_frame(t: Fraction, frame_dur: Fraction = FRAME_DUR) -> Fraction:
+    """Snap to nearest frame boundary."""
+    n = round(t / frame_dur)
+    return n * frame_dur
+
+
+def find_project_sequence(root: ET.Element) -> ET.Element:
+    """Find the top-level project sequence, not a nested/resource sequence."""
+    sequence = root.find(".//project/sequence")
+    if sequence is None:
+        sequence = root.find(".//sequence")
+    if sequence is None:
+        sys.exit("Could not find <sequence> in FCPXML")
+    return sequence
+
+
+def _find_sequence_format(root: ET.Element, sequence: ET.Element) -> ET.Element | None:
+    format_id = sequence.get("format")
+    if not format_id:
+        return None
+
+    for fmt_el in root.iter("format"):
+        if fmt_el.get("id") == format_id:
+            return fmt_el
+    return None
+
+
+def detect_frame_duration(root: ET.Element) -> Fraction:
+    """Detect the project sequence frame duration, defaulting to 29.97fps."""
+    sequence = find_project_sequence(root)
+    format_el = _find_sequence_format(root, sequence)
+    if format_el is not None:
+        frame_duration = format_el.get("frameDuration")
+        if frame_duration:
+            return parse_time(frame_duration)
+
+    return FRAME_DUR
 
 
 def detect_structure(fcpxml_path: str) -> dict:
     """Parse FCPXML and return structure info dict.
 
-    Returns dict with keys: tree, root, spine, parent, parent_ref,
-    parent_offset, parent_start, parent_dur, audio_clip, audio_ref,
-    audio_offset, audio_start, audio_dur, cam_a_refs.
+    Auto-detects frame rate from the sequence's format element.
     """
     tree = ET.parse(fcpxml_path)
     root = tree.getroot()
-    spine = root.find(".//spine")
+    sequence = find_project_sequence(root)
+    spine = sequence.find("spine")
+    if spine is None:
+        sys.exit("Could not find project <spine> in FCPXML")
+
+    frame_dur = detect_frame_duration(root)
 
     # Find the main parent clip (first enabled asset-clip on the spine)
     parent = None
@@ -82,6 +131,7 @@ def detect_structure(fcpxml_path: str) -> dict:
         ):
             cam_a_refs.add(child.get("ref"))
 
+    fps = 1 / float(frame_dur)
     info = {
         "tree": tree,
         "root": root,
@@ -97,17 +147,19 @@ def detect_structure(fcpxml_path: str) -> dict:
         "audio_start": audio_start,
         "audio_dur": audio_dur,
         "cam_a_refs": cam_a_refs,
+        "frame_dur": frame_dur,
     }
 
     print(
-        f"  Parent clip: ref={parent_ref}, offset={fmt(parent_offset)}, "
-        f"start={fmt(parent_start)}, dur={float(parent_dur):.1f}s"
+        f"  Parent clip: ref={parent_ref}, offset={fmt(parent_offset, frame_dur)}, "
+        f"start={fmt(parent_start, frame_dur)}, dur={float(parent_dur):.1f}s"
     )
     print(
-        f"  Audio clip:  ref={audio_ref}, offset={fmt(audio_offset)}, "
-        f"start={fmt(audio_start)}"
+        f"  Audio clip:  ref={audio_ref}, offset={fmt(audio_offset, frame_dur)}, "
+        f"start={fmt(audio_start, frame_dur)}"
     )
     print(f"  Camera A refs: {cam_a_refs}")
+    print(f"  Frame rate: {fps:.2f} fps (frame_dur={fmt(frame_dur)})")
 
     return info
 

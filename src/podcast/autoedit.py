@@ -13,7 +13,6 @@ from pathlib import Path
 import numpy as np
 
 from podcast.fcpxml import (
-    FRAME_DUR,
     detect_structure,
     fmt,
     parse_time,
@@ -140,7 +139,7 @@ def audio_secs_to_pst(t_sec: float, info: dict) -> Fraction:
     a_off = info["audio_offset"]
     a_st = info["audio_start"]
     raw = a_off + Fraction(t_sec).limit_denominator(100000) - a_st
-    return snap_to_frame(raw)
+    return snap_to_frame(raw, info["frame_dur"])
 
 
 def generate_fcpxml(
@@ -148,8 +147,12 @@ def generate_fcpxml(
     info: dict,
     output_path: str,
     audio_name: str,
+    swap_channels: bool = False,
 ) -> None:
     """Generate FCPXML with camera switches and audio lane splitting."""
+    frame_dur = info["frame_dur"]
+    _fmt = lambda f: fmt(f, frame_dur)  # format with correct frame rate
+
     tree = info["tree"]
     parent = info["parent"]
     parent_start = info["parent_start"]
@@ -215,9 +218,9 @@ def generate_fcpxml(
                 continue
 
             sub = copy.deepcopy(clip)
-            sub.set("offset", fmt(ov_s))
-            sub.set("start", fmt(c_st + (ov_s - c_off)))
-            sub.set("duration", fmt(ov_e - ov_s))
+            sub.set("offset", _fmt(ov_s))
+            sub.set("start", _fmt(c_st + (ov_s - c_off)))
+            sub.set("duration", _fmt(ov_e - ov_s))
 
             if sp == "B":
                 sub.set("enabled", "0")
@@ -247,10 +250,18 @@ def generate_fcpxml(
     a_fmt = info["audio_clip"].get("format", "r5")
 
     n_aud = 0
-    for lane, src_ch, role, active_speaker in [
-        ("-1", "1", "dialogue.dialogue-1", "A"),
-        ("-2", "2", "dialogue.dialogue-2", "B"),
-    ]:
+    # Map audio channels to speakers. When swapped, ch1(L)=B and ch2(R)=A.
+    if swap_channels:
+        lane_map = [
+            ("-1", "1", "dialogue.dialogue-1", "B"),
+            ("-2", "2", "dialogue.dialogue-2", "A"),
+        ]
+    else:
+        lane_map = [
+            ("-1", "1", "dialogue.dialogue-1", "A"),
+            ("-2", "2", "dialogue.dialogue-2", "B"),
+        ]
+    for lane, src_ch, role, active_speaker in lane_map:
         for seg_s, seg_e, sp in pst_segs:
             ov_s = max(a_off, seg_s)
             ov_e = min(a_end_pst, seg_e)
@@ -260,10 +271,10 @@ def generate_fcpxml(
             ac = ET.SubElement(parent, "asset-clip")
             ac.set("ref", audio_ref)
             ac.set("lane", lane)
-            ac.set("offset", fmt(ov_s))
+            ac.set("offset", _fmt(ov_s))
             ac.set("name", audio_name)
-            ac.set("start", fmt(a_st + (ov_s - a_off)))
-            ac.set("duration", fmt(ov_e - ov_s))
+            ac.set("start", _fmt(a_st + (ov_s - a_off)))
+            ac.set("duration", _fmt(ov_e - ov_s))
             ac.set("format", a_fmt)
             ac.set("audioRole", "dialogue")
 
@@ -333,7 +344,13 @@ def detect_fillers(
     save_transcript(result["segments"], out.with_name(out.stem + "_transcript.txt"))
     save_segments_json(result["segments"], out.with_name(out.stem + "_segments.json"))
 
-    audio_trim = float(info["audio_start"])
+    # SRT timeline_time = audio_file_time - audio_trim
+    # General formula: timeline = parent_offset + (audio_offset + file_time - audio_start) - parent_start
+    # So: audio_trim = audio_start - audio_offset + parent_start - parent_offset
+    audio_trim = float(
+        info["audio_start"] - info["audio_offset"]
+        + info["parent_start"] - info["parent_offset"]
+    )
     generate_srt(result["segments"], out.with_suffix(".srt"), audio_trim=audio_trim)
 
     return fillers
@@ -346,6 +363,8 @@ def add_filler_markers(info: dict, fillers: list[tuple]) -> int:
     a_st = info["audio_start"]
     parent_start = info["parent_start"]
     parent_end = parent_start + info["parent_dur"]
+    frame_dur = info["frame_dur"]
+    _fmt = lambda f: fmt(f, frame_dur)
 
     # DTD order: connected-clips*, markers*, audio-channel-source*
     insert_idx = 0
@@ -359,14 +378,14 @@ def add_filler_markers(info: dict, fillers: list[tuple]) -> int:
     n_markers = 0
     for filler_time, filler_dur, word in fillers:
         pst = a_off + Fraction(filler_time).limit_denominator(100000) - a_st
-        pst = snap_to_frame(pst)
+        pst = snap_to_frame(pst, frame_dur)
 
         if pst < parent_start or pst >= parent_end:
             continue
 
         marker = ET.Element("marker")
-        marker.set("start", fmt(pst))
-        marker.set("duration", fmt(FRAME_DUR))
+        marker.set("start", _fmt(pst))
+        marker.set("duration", _fmt(frame_dur))
         marker.set("value", word)
 
         parent.insert(insert_idx + n_markers, marker)
@@ -390,6 +409,7 @@ def run_autoedit(
     fillers: bool = False,
     whisper_model: str = "base",
     language: str = "en",
+    swap_channels: bool = False,
 ) -> None:
     """Full autoedit pipeline."""
     fcpxml_path = Path(fcpxml_file)
@@ -416,6 +436,9 @@ def run_autoedit(
     # 1 ---- extract audio ----
     print(f"\n[1/{n_steps}] Extracting audio channels ...")
     left, right = extract_channels(str(audio_path))
+    if swap_channels:
+        left, right = right, left
+        print("  Channels swapped: L→Camera B, R→Camera A")
     dur = len(left) / SAMPLE_RATE
     print(f"  {dur / 60:.1f} min  ({len(left)} samples/ch)")
 
@@ -459,7 +482,8 @@ def run_autoedit(
     # 5 ---- generate FCPXML ----
     step = n_steps
     print(f"\n[{step}/{n_steps}] Generating FCPXML ...")
-    generate_fcpxml(segments, info, output, audio_name=audio_path.name)
+    generate_fcpxml(segments, info, output, audio_name=audio_path.name,
+                     swap_channels=swap_channels)
 
     if filler_list:
         info2 = detect_structure(output)

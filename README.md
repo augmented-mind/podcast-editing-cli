@@ -46,6 +46,18 @@ All edits are non-destructive — select any disabled clip in FCP and press **V*
 
 **File → Import → XML...** → select the `_edited.fcpxml` file. FCP creates a new project with the auto-edits applied. Fine-tune from there.
 
+### Optional: Add timestamped PNG overlays
+
+Name overlay PNGs by their desired start time, e.g. `6_19.png` for 6:19 or
+`1_02_03.png` for 1:02:03, then import them into a copied timeline XML:
+
+```bash
+podcast overlays timeline.fcpxml overlay --duration 4.5 -o timeline_overlays.fcpxml
+```
+
+Import `timeline_overlays.fcpxml` back into Final Cut Pro. Each PNG is inserted
+as an editable connected clip on a high video lane.
+
 ### Step 5: Transcribe the final export
 
 After finishing your manual edits, export the final video from FCP, then:
@@ -91,6 +103,33 @@ podcast autoedit timeline.fcpxml audio.aifc -o custom_output.fcpxml
 | `--fillers` | off | Detect filler words (um, uh) and add markers to the timeline |
 | `--whisper-model` | base | Whisper model for filler detection |
 | `--language` | en | Language for transcription |
+| `--swap-channels` | off | Swap L/R channel mapping |
+
+### `podcast overlays`
+
+```bash
+podcast overlays timeline.fcpxml overlay                           # 4.5s PNG overlays
+podcast overlays main-snapshot.fcpxmld overlay                      # FCPXML bundle
+podcast overlays timeline.fcpxml overlay --duration 5.0            # custom duration
+podcast overlays timeline.fcpxml overlay --fade-in 0.5             # opacity fade-in
+podcast overlays timeline.fcpxml overlay --lane 12                 # use lane 12+
+podcast overlays timeline.fcpxml overlay -o timeline_overlays.fcpxml
+```
+
+The input may be a `.fcpxml` file, a `.fcpxmld` bundle, or
+`.fcpxmld/Info.fcpxml`. PNG file names should begin with a timestamp:
+`M_SS.png`, `MM_SS.png`, or `H_MM_SS.png`. Descriptive suffixes are okay, e.g.
+`6_19_topic_card.png`.
+
+#### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--duration` | 4.5 | Overlay duration in seconds |
+| `--lane` | 10 | Base positive lane for connected overlay clips |
+| `--fade-in` | 0.0 | Opacity fade-in duration in seconds |
+| `--ignore-unmatched` | off | Skip PNGs whose names do not start with a timestamp |
+| `--output`, `-o` | derived from input | Output FCPXML path |
 
 ## FCP Tips
 
