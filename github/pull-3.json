@@ -1,0 +1,61 @@
+{
+  "author": {
+    "id": "MDQ6VXNlcjIyNTEyODI1",
+    "is_bot": false,
+    "login": "lolipopshock",
+    "name": "Shannon Shen"
+  },
+  "baseRefName": "main",
+  "body": "## Summary\n- Add `podcast overlays` to insert timestamped PNG stills into FCPXML timelines\n- Support `.fcpxml`, `.fcpxmld`, and `.fcpxmld/Info.fcpxml` inputs with optional duration/lane/fade-in settings\n- Reuse project-sequence frame-rate detection and keep the autoedit frame-rate/swap-channel fixes\n- Document the overlay workflow and add coverage for timestamp parsing, bundle inputs, lane assignment, fade-ins, and project timeline anchoring\n\n## Tests\n- `python -m compileall -q src`\n- `python -m pytest -q`",
+  "closedAt": null,
+  "comments": [],
+  "createdAt": "2026-06-11T21:07:22Z",
+  "files": [
+    {
+      "path": "README.md",
+      "additions": 39,
+      "deletions": 0,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/autoedit.py",
+      "additions": 41,
+      "deletions": 17,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/cli.py",
+      "additions": 42,
+      "deletions": 1,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/fcpxml.py",
+      "additions": 67,
+      "deletions": 15,
+      "changeType": "MODIFIED"
+    },
+    {
+      "path": "src/podcast/overlays.py",
+      "additions": 514,
+      "deletions": 0,
+      "changeType": "ADDED"
+    },
+    {
+      "path": "tests/test_overlays.py",
+      "additions": 218,
+      "deletions": 0,
+      "changeType": "ADDED"
+    }
+  ],
+  "headRefName": "feature/fcpxml-overlays-pr",
+  "labels": [],
+  "mergedAt": null,
+  "number": 3,
+  "reviewDecision": "",
+  "reviews": [],
+  "state": "OPEN",
+  "title": "Add FCPXML overlay insertion command",
+  "updatedAt": "2026-06-11T21:07:22Z",
+  "url": "https://github.com/augmented-mind/podcast-editing-cli/pull/3"
+}
