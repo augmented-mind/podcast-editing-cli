@@ -14,3 +14,4 @@
 
 ## Open Questions
 
+- PR #2 (feature/overlay-fcpxml) still open after MINOR_ISSUES review; PR #3 (feature/fcpxml-overlays-pr, 2026-06-11) appears to supersede it — confirm PR #2 can be closed.
