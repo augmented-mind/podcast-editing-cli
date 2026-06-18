@@ -1,15 +1,15 @@
 {
   "schema_version": 1,
   "repo_slug": "augmented-mind/podcast-editing-cli",
-  "last_sync_at": "2026-06-18T10:47:58Z",
+  "last_sync_at": "2026-06-18T15:52:40Z",
   "last_activity_at": "2026-06-11T21:07:22Z",
   "cursors": {
-    "issues": "2026-06-18T10:47:58Z",
-    "pulls": "2026-06-18T10:47:58Z",
-    "discussions": "2026-06-18T10:47:58Z",
-    "commits": "2026-06-18T10:47:58Z"
+    "issues": "2026-06-18T15:52:40Z",
+    "pulls": "2026-06-18T15:52:40Z",
+    "discussions": "2026-06-18T15:52:40Z",
+    "commits": "2026-06-18T15:52:40Z"
   },
-  "last_run_url": "https://github.com/augmented-mind/podcast-editing-cli/actions/runs/27754235672",
+  "last_run_url": "https://github.com/augmented-mind/podcast-editing-cli/actions/runs/27771918923",
   "created_at": "2026-04-29T19:54:41.827Z",
-  "updated_at": "2026-06-18T10:48:00.539Z"
+  "updated_at": "2026-06-18T15:52:42.955Z"
 }
